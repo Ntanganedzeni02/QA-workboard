@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { upload } from '@vercel/blob/client';
 import { products, statuses, checkStatuses, results, platforms, fresh, applyTemplate, outstanding, attention, recordResult, report, defect, type RecordItem as Item, type State } from '../lib/model';
 const pages = ['Today', 'Workboard', 'Release Testing', 'Defects & Retests', 'Settings'];
 const icons = ['◷', '▦', '☑', '⚑', '⚙'];
@@ -184,13 +185,24 @@ export default function App() {
             setDraft(null); }}><section className="modal" role="dialog" aria-modal="true" aria-label={'Edit ' + draft.kind}><div className="section-head"><div><p className="eyebrow">{draft.kind.toUpperCase()}</p><h2>{state.records.some(r => r.id === draft.id) ? 'Edit details' : 'New ' + draft.kind}</h2></div><button aria-label="Close editor" onClick={() => { if (confirm('Close without saving changes?'))
             setDraft(null); }}>✕</button></div><form onSubmit={e => { e.preventDefault(); commit(); }}><div className="form-content">{fields([['title', draft.kind === 'release' ? 'Release name *' : 'Title *']])}{draft.kind === 'release' ? <>{dropdown('product', 'Product *', products, true)}<details><summary>Release details</summary>{fields([['build', 'Build / version'], ['scope', 'Scope', 'textarea'], ['goal', 'Release goal', 'textarea'], ['notes', 'Notes', 'textarea'], ['testingUrl', 'Testing URL (optional)', 'url']])}{dropdown('environment', 'Environment', ['Staging', 'Production'], true)}</details></> : null}
         {['task', 'check'].includes(draft.kind) && <><div className="form-grid">{dropdown('status', 'Workflow status', draft.kind === 'check' ? checkStatuses : statuses)}{draft.kind === 'check' ? dropdown('result', 'Result', results) : dropdown('product', 'Product', products, true)}{dropdown('priority', 'Priority', ['High', 'Normal', 'Low'])}{dropdown('platform', 'Platform', platforms, true)}</div>{draft.kind === 'check' && <details className="help-details"><summary>About results</summary><p>Saving a result adds a history entry. Previous failures and evidence are preserved.</p></details>}{fields([['nextStep', 'Next step'], ['blocker', 'Blocker']])}<details><summary>Feature & supporting details</summary>{fields([['description', 'Description', 'textarea'], ['feature', 'Feature'], ['goal', 'Feature goal', 'textarea'], ['why', 'Why this matters to PAAQ', 'textarea'], ['due', 'Due date', 'date'], ['clarification', 'Needs clarification'], ['notes', 'Notes', 'textarea'], ['slackLink', 'Slack source link', 'url']])}<label>Related release<select value={draft.releaseId || ''} onChange={e => setDraft({ ...draft, releaseId: e.target.value })}><option value="">Not set</option>{releases.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}</select></label>{draft.kind === 'task' && <label>Related test check<select value={draft.checkId || ''} onChange={e => setDraft({ ...draft, checkId: e.target.value })}><option value="">Not set</option>{checks.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}</select></label>}</details>{draft.kind === 'check' && <><details><summary>Test details & defect report</summary>{fields([['expected', 'Expected behaviour', 'textarea'], ['actual', 'Actual result', 'textarea'], ['preconditions', 'Preconditions', 'textarea'], ['steps', 'Test / reproduction steps', 'textarea'], ['device', 'Device'], ['os', 'Operating system version'], ['version', 'Browser or app / build version'], ['defect', 'Defect wording', 'textarea'], ['retest', 'Retest outcome', 'textarea']])}{dropdown('severity', 'Severity', ['Critical', 'Major', 'Minor', 'Cosmetic'], true)}<button type="button" onClick={() => copy(defect(draft))}>Copy defect report</button></details><details><summary>Evidence (optional)</summary>{fields([['evidenceLinks', 'Evidence links', 'textarea']])}<label>Upload files (up to 20 MB each)<input type="file" multiple onChange={async (e) => { const files = Array.from(e.target.files || []); let added = [...(draft.files || [])]; try {
+            const config = await fetch('/api/evidence?config=1');
+            if (!config.ok)
+                throw Error(await config.text());
+            const { directUpload } = await config.json();
             for (const file of files) {
-                const data = new FormData();
-                data.append('file', file);
-                const r = await fetch('/api/evidence', { method: 'POST', body: data });
-                if (!r.ok)
-                    throw Error(await r.text());
-                added.push(await r.json());
+                if (directUpload) {
+                    const id = crypto.randomUUID();
+                    await upload(`evidence/${id}`, file, { access: 'private', contentType: file.type || 'application/octet-stream', handleUploadUrl: '/api/evidence/upload', multipart: file.size > 5 * 1024 * 1024 });
+                    added.push({ id, name: file.name, size: file.size });
+                }
+                else {
+                    const data = new FormData();
+                    data.append('file', file);
+                    const r = await fetch('/api/evidence', { method: 'POST', body: data });
+                    if (!r.ok)
+                        throw Error(await r.text());
+                    added.push(await r.json());
+                }
             }
             setDraft({ ...draft, files: added });
             setNotice('Files uploaded. Save this check to attach them.');

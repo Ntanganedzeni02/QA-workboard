@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { secret } from '../../../lib/db';
 import { authorized, safeOrigin } from '../../../lib/auth';
 export const runtime = 'nodejs';
-async function slack(method: string, args: Record<string, string> = {}) { const token = secret('slack_token'); if (!token)
+async function slack(method: string, args: Record<string, string> = {}) { const token = await secret('slack_token'); if (!token)
     throw Error('Slack is disconnected'); const r = await fetch('https://slack.com/api/' + method + '?' + new URLSearchParams(args), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }); const data = await r.json(); if (!data.ok)
     throw Error(data.error || 'Slack request failed'); return data; }
 export async function GET(req: Request) { if (!await authorized())
@@ -23,7 +23,7 @@ export async function GET(req: Request) { if (!await authorized())
         const d = await r.json();
         if (!d.ok)
             throw Error(d.error);
-        secret('slack_token', d.access_token);
+        await secret('slack_token', d.access_token);
         return Response.redirect(process.env.APP_URL! + '/?slack=connected');
     }
     if (url.searchParams.has('channels')) {
@@ -35,7 +35,7 @@ export async function GET(req: Request) { if (!await authorized())
         } while (cursor);
         return Response.json({ channels });
     }
-    return Response.json({ connected: !!secret('slack_token'), lastSync: secret('slack_sync') || null });
+    return Response.json({ connected: !!(await secret('slack_token')), lastSync: await secret('slack_sync') || null });
 }
 catch (e: any) {
     return Response.json({ error: e.message }, { status: 400 });
@@ -44,7 +44,7 @@ export async function POST(req: Request) { if (!await authorized() || !safeOrigi
     return new Response('Unauthorized', { status: 401 }); try {
     const { channel, from, to, disconnect } = await req.json();
     if (disconnect) {
-        secret('slack_token', '');
+        await secret('slack_token', '');
         return Response.json({ ok: true });
     }
     if (!channel || !from || !to || from > to)
@@ -79,7 +79,7 @@ export async function POST(req: Request) { if (!await authorized() || !safeOrigi
         }
     }
     const sync = new Date().toISOString();
-    secret('slack_sync', sync);
+    await secret('slack_sync', sync);
     return Response.json({ messages, lastSync: sync });
 }
 catch (e: any) {
