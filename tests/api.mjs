@@ -8,6 +8,7 @@ assert.equal((await fetch(base+'/api/auth',{method:'POST',headers:{'Content-Type
 const login=await fetch(base+'/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:process.env.TEST_PASSWORD})});assert.equal(login.status,200);headers.Cookie=login.headers.get('set-cookie').split(';')[0];
 }
 const initial=await (await fetch(base+'/api/store',{headers})).json();
+const slackStatus=await fetch(base+'/api/slack',{headers});assert.equal(slackStatus.status,200);const slackState=await slackStatus.json();assert.equal(typeof slackState.connected,'boolean');assert.ok('lastSync' in slackState);
 const put=records=>fetch(base+'/api/store',{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({revision:initial.revision,records})});
 try{
 const saved=await put([...initial.records,{id:crypto.randomUUID(),kind:'task',title:'API persistence check',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}]);assert.equal(saved.status,200);assert.equal((await put([])).status,409);
